@@ -67,6 +67,15 @@ class FakeHttpHandler(simple_http_server.HttpServerHandler):
         self.close_connection = 0
 
 
+CORS_header = {
+    "Allow": "GET,POST,OPTIONS",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization,Content-Type,Sec-Fetch-Site,Sec-Fetch-Mode,Sec-Fetch-Dest",
+    "Connection": "close",
+}
+
+
 class Http_Handler(simple_http_server.HttpServerHandler):
     deploy_proc = None
 
@@ -94,6 +103,7 @@ class Http_Handler(simple_http_server.HttpServerHandler):
         #    xlog.debug("m:%s id:%d", k, v['menu_sort_id'])
 
     def do_OPTIONS(self):
+        # xlog.debug('%s "%s headers:%s from:%s', self.command, self.path, self.headers, self.address_string())
         try:
             origin = utils.to_str(self.headers.get(b'Origin'))
             # if origin not in self.config.allow_web_origins:
@@ -118,9 +128,11 @@ class Http_Handler(simple_http_server.HttpServerHandler):
         if refer:
             refer_loc = urlparse(refer).netloc
             host = self.headers.get('Host')
-            if refer_loc != host:
+            if refer_loc != host and refer_loc not in config.allowed_refers:
                 xlog.warn("web control ref:%s host:%s", refer_loc, host)
                 return
+
+            self.set_CORS(CORS_header)
 
         try:
             content_type = self.headers.get('Content-Type', "")
@@ -155,6 +167,7 @@ class Http_Handler(simple_http_server.HttpServerHandler):
                 path = '/' + '/'.join(url_path_list[4:])
                 controler = module_init.proc_handler[module]["imp"].local.web_control. \
                     ControlHandler(self.client_address, self.headers, self.command, path, self.rfile, self.wfile)
+                controler.set_CORS(self.res_headers)
                 controler.postvars = utils.to_str(self.postvars)
                 try:
                     controler.do_POST()
@@ -182,9 +195,11 @@ class Http_Handler(simple_http_server.HttpServerHandler):
         if refer:
             refer_loc = urlparse(refer).netloc
             host = self.headers.get('Host')
-            if refer_loc != host:
+            if refer_loc != host and refer_loc not in config.allowed_refers:
                 xlog.warn("web control ref:%s host:%s", refer_loc, host)
                 return
+
+            self.set_CORS(CORS_header)
 
         # check for '..', which will leak file
         if re.search(r'(\.{2})', self.path) is not None:
@@ -235,6 +250,7 @@ class Http_Handler(simple_http_server.HttpServerHandler):
                 path = '/' + '/'.join(url_path_list[4:])
                 controler = module_init.proc_handler[module]["imp"].local.web_control.ControlHandler(
                     self.client_address, self.headers, self.command, path, self.rfile, self.wfile)
+                controler.set_CORS(self.res_headers)
                 controler.do_GET()
                 return
             else:

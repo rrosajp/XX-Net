@@ -24,6 +24,7 @@ config = xconfig.Config(config_path)
 
 config.set_var("control_ip", "127.0.0.1")
 config.set_var("control_port", 8085)
+config.set_var("allowed_refers", [""])
 
 # System config
 config.set_var("language", "")  # en_US,
@@ -81,10 +82,13 @@ config.set_var("global_proxy_port", 0)
 config.set_var("global_proxy_username", "")
 config.set_var("global_proxy_password", "")
 
-config.load()
+try:
+    config.load()
+except Exception as e:
+    xlog.warn("loading config e:%r", e)
 
 app_name = "XX-Net"
-valid_language = ['en_US', 'fa_IR', 'zh_CN']
+valid_language = ['en_US', 'fa_IR', 'zh_CN', 'ru_RU']
 try:
     fp = os.path.join(root_path, "code", "app_info.json")
     with open(fp, "r") as fd:
@@ -106,6 +110,9 @@ def _get_os_language():
                 return 'en_US'
             elif b'fa' in lang_code:
                 return 'fa_IR'
+            elif b'ru' in lang_code:
+                return 'ru_RU'
+
         except:
             pass
     elif sys_platform.platform == "android":
@@ -120,6 +127,8 @@ def _get_os_language():
                 return 'en_US'
             elif 'fa' in lang_code:
                 return 'fa_IR'
+            elif 'ru' in lang_code:
+                return 'ru_RU'
             else:
                 return None
         except Exception as e:
@@ -133,6 +142,8 @@ def _get_os_language():
             return 'en_US'
         elif 'fa' in lang_code:
             return 'fa_IR'
+        elif 'ru' in lang_code:
+            return 'ru_RU'
         else:
             return None
     else:

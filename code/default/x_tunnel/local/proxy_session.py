@@ -5,7 +5,7 @@ import threading
 import xstruct as struct
 import hashlib
 
-from xlog import getLogger
+from xlog import getLogger, keep_log
 xlog = getLogger("x_tunnel")
 
 import utils
@@ -33,6 +33,7 @@ def decrypt_data(data):
         return encrypt.Encryptor(g.config.encrypt_password, g.config.encrypt_method).decrypt(data)
     else:
         return data
+
 
 def traffic_readable(num, units=('B', 'KB', 'MB', 'GB')):
     for unit in units:
@@ -422,6 +423,15 @@ class ProxySession(object):
                     xlog.warn("login_session time:%d fail, res:%d msg:%s", 1000 * time_cost, res, message)
                     return False
 
+                try:
+                    msg_info = json.loads(message)
+                    if msg_info.get("full_log"):
+                        xlog.debug("keep full log")
+                        keep_log(temp=True)
+                except Exception as e:
+                    xlog.warn("login_session %s json error:%r", message, e)
+                    msg_info = {}
+
                 g.last_api_error = ""
                 xlog.info("login_session %s time:%d msg:%s", self.session_id, 1000 * time_cost, message)
                 return True
@@ -581,7 +591,7 @@ class ProxySession(object):
             self.wait_queue.wait(work_id)
 
         xlog.debug("get_send_data on stop")
-        return "", ""
+        return b"", b""
 
     def ack_process(self, ack):
         self.lock.acquire()

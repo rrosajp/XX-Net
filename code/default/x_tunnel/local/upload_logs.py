@@ -40,23 +40,36 @@ def mask_x_tunnel_password(fp):
         return dat_str
 
 
+def get_launcher_port():
+    launcher_config_fn = os.path.join(data_path, "launcher", "config.json")
+    try:
+        with open(launcher_config_fn, "r") as fd:
+            info = json.load(fd)
+            return info.get("control_port", 8085)
+    except Exception as e:
+        xlog.exception("get_launcher_port except:%r", e)
+        return 8085
+
+
 def collect_debug_and_log():
+    port = get_launcher_port()
+
     # collect debug info and save to folders
     debug_infos = {
-        "system_info": "http://127.0.0.1:8085/debug",
-        "gae_info": "http://127.0.0.1:8085/module/gae_proxy/control/debug",
-        "gae_log": "http://127.0.0.1:8085/module/gae_proxy/control/log?cmd=get_new&last_no=1",
-        "xtunnel_info": "http://127.0.0.1:8085/module/x_tunnel/control/debug",
-        "xtunnel_status": "http://127.0.0.1:8085/module/x_tunnel/control/status",
-        "cloudflare_info": "http://127.0.0.1:8085/module/x_tunnel/control/cloudflare_front/debug",
-        "tls_info": "http://127.0.0.1:8085/module/x_tunnel/control/tls_relay_front/debug",
-        "seley_info": "http://127.0.0.1:8085/module/x_tunnel/control/seley_front/debug",
-        "cloudflare_log": "http://127.0.0.1:8085/module/x_tunnel/control/cloudflare_front/log?cmd=get_new&last_no=1",
-        "tls_log": "http://127.0.0.1:8085/module/x_tunnel/control/tls_relay_front/log?cmd=get_new&last_no=1",
-        "seley_log": "http://127.0.0.1:8085/module/x_tunnel/control/seley_front/log?cmd=get_new&last_no=1",
-        "xtunnel_log": "http://127.0.0.1:8085/module/x_tunnel/control/log?cmd=get_new&last_no=1",
-        "smartroute_log": "http://127.0.0.1:8085/module/smart_router/control/log?cmd=get_new&last_no=1",
-        "launcher_log": "http://127.0.0.1:8085/log?cmd=get_new&last_no=1"
+        "system_info": f"http://127.0.0.1:{port}/debug",
+        "gae_info": f"http://127.0.0.1:{port}/module/gae_proxy/control/debug",
+        "gae_log": f"http://127.0.0.1:{port}/module/gae_proxy/control/log?cmd=get_new&last_no=1",
+        "xtunnel_info": f"http://127.0.0.1:{port}/module/x_tunnel/control/debug",
+        "xtunnel_status": f"http://127.0.0.1:{port}/module/x_tunnel/control/status",
+        "cloudflare_info": f"http://127.0.0.1:{port}/module/x_tunnel/control/cloudflare_front/debug",
+        "tls_info": f"http://127.0.0.1:{port}/module/x_tunnel/control/tls_relay_front/debug",
+        "seley_info": f"http://127.0.0.1:{port}/module/x_tunnel/control/seley_front/debug",
+        "cloudflare_log": f"http://127.0.0.1:{port}/module/x_tunnel/control/cloudflare_front/log?cmd=get_new&last_no=1",
+        "tls_log": f"http://127.0.0.1:{port}/module/x_tunnel/control/tls_relay_front/log?cmd=get_new&last_no=1",
+        "seley_log": f"http://127.0.0.1:{port}/module/x_tunnel/control/seley_front/log?cmd=get_new&last_no=1",
+        "xtunnel_log": f"http://127.0.0.1:{port}/module/x_tunnel/control/log?cmd=get_new&last_no=1",
+        "smartroute_log": f"http://127.0.0.1:{port}/module/smart_router/control/log?cmd=get_new&last_no=1",
+        "launcher_log": f"http://127.0.0.1:{port}/log?cmd=get_new&last_no=1"
     }
 
     download_path = os.path.join(env_info.data_path, "downloads")
@@ -110,7 +123,7 @@ def list_files():
     return other_files + log_files_list
 
 
-def pack_logs(max_size=800 * 1024):
+def pack_logs(max_size=10 * 1024 * 1024):
     content_size = 0
 
     collect_debug_and_log()
@@ -118,11 +131,10 @@ def pack_logs(max_size=800 * 1024):
     try:
         files = list_files()
         zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, mode="w") as zfd:
+        with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zfd:
             for src_file in files:
                 file_size = os.path.getsize(src_file)
-                content_size += file_size
-                if content_size > max_size:
+                if content_size + file_size > max_size:
                     break
 
                 relate_path = src_file[len(data_path) + 1:]
@@ -133,30 +145,32 @@ def pack_logs(max_size=800 * 1024):
                     zfd.writestr(relate_path, content)
                 else:
                     zfd.write(src_file, arcname=relate_path)
+                content_size += file_size
 
-                if content_size > max_size:
-                    break
-        return zip_buffer.getvalue()
+        compressed_data = zip_buffer.getvalue()
+        xlog.debug("compress log size:%d to %d", content_size, len(compressed_data))
+        return compressed_data
     except Exception as e:
         xlog.exception("packing logs except:%r", e)
         return None
 
 
 def upload_logs_thread():
-    sleep(3 * 60)
+    sleep(g.config.delay_collect_log)
     while g.running:
         if not g.running or not g.server_host or not g.session or g.session.last_receive_time == 0:
             time.sleep(10)
         else:
             break
 
-    sleep(30)
+    sleep(g.config.delay_collect_log2)
     if not g.running:
         return
 
     session_id = utils.to_str(g.session.session_id)
     data = pack_logs()
-    upload(session_id, data)
+    if data:
+        upload(session_id, data)
 
 
 def upload(session_id, data):
